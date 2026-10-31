@@ -20,6 +20,7 @@ import {
   Minus,
   PenLine,
   Plus,
+  Redo2,
   RotateCcw,
   RotateCw,
   Save,
@@ -32,17 +33,23 @@ import { formatBytes, sanitizeFileName } from '../lib/format'
 import { canvasToBytes, imageFromBytes, mimeForExtension } from '../lib/image'
 import {
   DEFAULT_FILTERS,
+  MIN_CROP_SIZE,
   buildCompositeCanvas,
+  constrainCropToAspect,
   cropStrokes,
+  fitCropToAspect,
   makeCanvas,
+  normalizedCropAspect,
   thumbnailDataUrl,
   transformStrokesForFlip,
   transformStrokesForRotation,
   type BaseImage,
+  type CropHandle,
   type CropRect,
   type ImageFilters,
   type PenStroke
 } from '../lib/image-edit'
+import { pushImageHistory, type ImageSnapshot } from '../lib/image-history'
 import { ConfirmDialog } from './ConfirmDialog'
 
 interface ImageEditorProps {
@@ -54,12 +61,19 @@ interface ImageEditorProps {
 }
 
 type Tool = 'pan' | 'pen'
-type CropHandle = 'move' | 'nw' | 'ne' | 'sw' | 'se'
+type CropRatio = 'free' | '1:1' | '4:3' | '16:9'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
-const MIN_CROP = 0.04
+const MIN_CROP = MIN_CROP_SIZE
+const MAX_EXPORT_DIMENSION = 16384
 const PEN_COLORS = ['#E11D48', '#1C1917', '#1D4ED8', '#F59E0B', '#ffffff']
+const CROP_RATIOS: Array<{ key: CropRatio; label: string; value: number | null }> = [
+  { key: 'free', label: 'Libre', value: null },
+  { key: '1:1', label: '1:1', value: 1 },
+  { key: '4:3', label: '4:3', value: 4 / 3 },
+  { key: '16:9', label: '16:9', value: 16 / 9 }
+]
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -102,7 +116,14 @@ export function ImageEditor({
   const [container, setContainer] = useState({ width: 0, height: 0 })
   const [cropMode, setCropMode] = useState(false)
   const [crop, setCrop] = useState<CropRect>({ x: 0.06, y: 0.06, width: 0.88, height: 0.88 })
+  const [cropRatio, setCropRatio] = useState<CropRatio>('free')
   const [exportFormat, setExportFormat] = useState<ImageFormat>(imageExportFormat(initialExt))
+  const [exportWidth, setExportWidth] = useState(0)
+  const [exportHeight, setExportHeight] = useState(0)
+  const [lockAspect, setLockAspect] = useState(true)
+  const [jpegQuality, setJpegQuality] = useState(92)
+  const [past, setPast] = useState<ImageSnapshot[]>([])
+  const [future, setFuture] = useState<ImageSnapshot[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -113,6 +134,38 @@ export function ImageEditor({
   const shellRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLCanvasElement>(null)
   const currentStroke = useRef<PenStroke | null>(null)
+
+  const recordHistory = useCallback(() => {
+    if (!base) return
+    setPast((current) => pushImageHistory(current, { base, strokes, filters }))
+    setFuture([])
+  }, [base, filters, strokes])
+
+  const restoreSnapshot = useCallback((snapshot: ImageSnapshot) => {
+    setBase(snapshot.base)
+    setStrokes(snapshot.strokes)
+    setFilters({ ...snapshot.filters })
+    setCropMode(false)
+    setDirty(true)
+  }, [])
+
+  const undo = useCallback(() => {
+    if (!base || past.length === 0) return
+    const previous = past[past.length - 1]
+    if (!previous) return
+    setFuture((current) => [{ base, strokes, filters }, ...current].slice(0, 60))
+    setPast((current) => current.slice(0, -1))
+    restoreSnapshot(previous)
+  }, [base, filters, past, restoreSnapshot, strokes])
+
+  const redo = useCallback(() => {
+    if (!base || future.length === 0) return
+    const next = future[0]
+    if (!next) return
+    setPast((current) => pushImageHistory(current, { base, strokes, filters }))
+    setFuture((current) => current.slice(1))
+    restoreSnapshot(next)
+  }, [base, filters, future, restoreSnapshot, strokes])
 
   useEffect(() => {
     let cancelled = false
@@ -128,6 +181,10 @@ export function ImageEditor({
         }
         originalRef.current = loaded
         setBase(loaded)
+        setExportWidth(loaded.width)
+        setExportHeight(loaded.height)
+        setPast([])
+        setFuture([])
         setLoading(false)
       })
       .catch((reason: unknown) => {
@@ -300,12 +357,14 @@ export function ImageEditor({
     if (!stroke) return
     previewRef.current?.releasePointerCapture(event.pointerId)
     currentStroke.current = null
+    recordHistory()
     setStrokes((current) => [...current, stroke])
     setDirty(true)
   }
 
   const rotate = (clockwise: boolean) => {
     if (!base) return
+    recordHistory()
     const next = makeCanvas(base.height, base.width)
     const context = next.getContext('2d')
     if (!context) return
@@ -319,12 +378,15 @@ export function ImageEditor({
     context.drawImage(base.source, 0, 0, base.width, base.height)
     setBase({ source: next, width: next.width, height: next.height })
     setStrokes((current) => transformStrokesForRotation(current, clockwise))
+    setExportWidth(next.width)
+    setExportHeight(next.height)
     setCropMode(false)
     setDirty(true)
   }
 
   const flip = (horizontal: boolean) => {
     if (!base) return
+    recordHistory()
     const next = makeCanvas(base.width, base.height)
     const context = next.getContext('2d')
     if (!context) return
@@ -341,11 +403,27 @@ export function ImageEditor({
     setDirty(true)
   }
 
+  const cropAspectValue = CROP_RATIOS.find((entry) => entry.key === cropRatio)?.value ?? null
+  const normalizedAspect =
+    base && cropAspectValue
+      ? normalizedCropAspect(cropAspectValue, base.width, base.height)
+      : null
+
+  const changeCropRatio = (ratio: CropRatio) => {
+    setCropRatio(ratio)
+    const value = CROP_RATIOS.find((entry) => entry.key === ratio)?.value ?? null
+    if (value && base) {
+      const aspect = normalizedCropAspect(value, base.width, base.height)
+      setCrop((current) => fitCropToAspect(current, aspect))
+    }
+  }
+
   const startCrop = () => {
     setCropMode(true)
     setZoom(1)
     setTool('pan')
-    setCrop({ x: 0.06, y: 0.06, width: 0.88, height: 0.88 })
+    const initial = { x: 0.06, y: 0.06, width: 0.88, height: 0.88 }
+    setCrop(normalizedAspect ? fitCropToAspect(initial, normalizedAspect) : initial)
   }
 
   const cancelCrop = () => {
@@ -355,6 +433,7 @@ export function ImageEditor({
 
   const applyCrop = () => {
     if (!base) return
+    recordHistory()
     const pixelX = Math.round(crop.x * base.width)
     const pixelY = Math.round(crop.y * base.height)
     const pixelWidth = Math.max(1, Math.round(crop.width * base.width))
@@ -375,6 +454,8 @@ export function ImageEditor({
     )
     setBase({ source: next, width: pixelWidth, height: pixelHeight })
     setStrokes((current) => cropStrokes(current, crop))
+    setExportWidth(pixelWidth)
+    setExportHeight(pixelHeight)
     setCropMode(false)
     setZoom(1)
     setDirty(true)
@@ -413,7 +494,9 @@ export function ImageEditor({
         if (handle === 'sw' || handle === 'se') bottom = clamp(bottom + dy, top + MIN_CROP, 1)
         next = { x: left, y: top, width: right - left, height: bottom - top }
       }
-      setCrop(next)
+      setCrop(
+        normalizedAspect ? constrainCropToAspect(next, normalizedAspect, handle) : next
+      )
     }
     const up = () => {
       window.removeEventListener('pointermove', move)
@@ -425,11 +508,15 @@ export function ImageEditor({
 
   const resetImage = () => {
     if (!originalRef.current) return
+    recordHistory()
     setBase(originalRef.current)
     setStrokes([])
     setFilters({ ...DEFAULT_FILTERS })
     setCropMode(false)
+    setCropRatio('free')
     setCrop({ x: 0.06, y: 0.06, width: 0.88, height: 0.88 })
+    setExportWidth(originalRef.current.width)
+    setExportHeight(originalRef.current.height)
     setZoom(1)
     setDirty(false)
     setExportFormat(imageExportFormat(initialExt))
@@ -440,11 +527,29 @@ export function ImageEditor({
     (format: ImageFormat) => {
       if (!base) throw new Error('Image indisponible.')
       return buildCompositeCanvas(base, strokes, filters, {
-        whiteBackground: format === 'jpg'
+        whiteBackground: format === 'jpg',
+        targetWidth: exportWidth || base.width,
+        targetHeight: exportHeight || base.height
       })
     },
-    [base, filters, strokes]
+    [base, exportHeight, exportWidth, filters, strokes]
   )
+
+  const exportSizeError = useCallback((): string | null => {
+    const values = [exportWidth, exportHeight]
+    if (
+      values.some(
+        (value) =>
+          !Number.isFinite(value) ||
+          value <= 0 ||
+          value > MAX_EXPORT_DIMENSION ||
+          Math.round(value) !== value
+      )
+    ) {
+      return `Les dimensions doivent être des nombres entiers entre 1 et ${MAX_EXPORT_DIMENSION} px.`
+    }
+    return null
+  }, [exportHeight, exportWidth])
 
   const exportCopy = useCallback(async () => {
     if (exporting || saving) return
@@ -452,10 +557,19 @@ export function ImageEditor({
       notify('Terminez ou annulez le recadrage avant d’exporter.', 'info')
       return
     }
+    const sizeError = exportSizeError()
+    if (sizeError) {
+      notify(sizeError, 'error')
+      return
+    }
     setExporting(true)
     try {
       const canvas = buildCanvas(exportFormat)
-      const bytes = await canvasToBytes(canvas, exportFormat)
+      const bytes = await canvasToBytes(
+        canvas,
+        exportFormat,
+        exportFormat === 'jpg' ? jpegQuality / 100 : undefined
+      )
       const suffix = dirty ? ' - modifié' : ''
       const extension = exportFormat === 'jpg' ? 'jpg' : exportFormat
       const result = await window.doclab.saveFile({
@@ -471,7 +585,18 @@ export function ImageEditor({
     } finally {
       setExporting(false)
     }
-  }, [buildCanvas, cropMode, dirty, exportFormat, exporting, notify, saving, scanSource.name])
+  }, [
+    buildCanvas,
+    cropMode,
+    dirty,
+    exportFormat,
+    exportSizeError,
+    exporting,
+    jpegQuality,
+    notify,
+    saving,
+    scanSource.name
+  ])
 
   const save = useCallback(async () => {
     if (saving || exporting) return
@@ -483,16 +608,25 @@ export function ImageEditor({
       await exportCopy()
       return
     }
+    const sizeError = exportSizeError()
+    if (sizeError) {
+      notify(sizeError, 'error')
+      return
+    }
     setSaving(true)
     try {
       const format = imageExportFormat(source.meta.ext)
       const canvas = buildCanvas(format)
-      const bytes = await canvasToBytes(canvas, format)
+      const bytes = await canvasToBytes(
+        canvas,
+        format,
+        format === 'jpg' ? jpegQuality / 100 : undefined
+      )
       const updated = await window.doclab.replaceDocument({
         id: source.meta.id,
         data: bytes,
-        width: base?.width,
-        height: base?.height
+        width: canvas.width,
+        height: canvas.height
       })
       let meta = updated
       try {
@@ -508,12 +642,12 @@ export function ImageEditor({
       setSaving(false)
     }
   }, [
-    base?.height,
-    base?.width,
     buildCanvas,
     canReplace,
     cropMode,
+    exportSizeError,
     exporting,
+    jpegQuality,
     notify,
     onSaved,
     saving,
@@ -544,9 +678,17 @@ export function ImageEditor({
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       const typing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'))
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      const mod = event.ctrlKey || event.metaKey
+      if (mod && event.key.toLowerCase() === 's') {
         event.preventDefault()
         void save()
+      } else if (mod && !typing && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) redo()
+        else undo()
+      } else if (mod && !typing && event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        redo()
       } else if (!typing && event.key === 'Escape') {
         if (cropMode) cancelCrop()
         else setTool('pan')
@@ -554,7 +696,7 @@ export function ImageEditor({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [cropMode, save])
+  }, [cropMode, redo, save, undo])
 
   const saveLabel = canReplace ? 'Enregistrer' : 'Enregistrer sous'
   const filterChanged =
@@ -589,6 +731,26 @@ export function ImageEditor({
         </div>
 
         <div className="editor-actions">
+          <div className="history-actions">
+            <button
+              className="icon-button"
+              onClick={undo}
+              disabled={past.length === 0}
+              title="Annuler (Ctrl+Z)"
+              aria-label="Annuler"
+            >
+              <Undo2 size={17} />
+            </button>
+            <button
+              className="icon-button"
+              onClick={redo}
+              disabled={future.length === 0}
+              title="Rétablir (Ctrl+Shift+Z)"
+              aria-label="Rétablir"
+            >
+              <Redo2 size={17} />
+            </button>
+          </div>
           <button
             className="button button-ghost button-small"
             onClick={() => void exportCopy()}
@@ -648,6 +810,18 @@ export function ImageEditor({
                 <Crop size={15} />
                 Ajustez le cadre de recadrage
               </span>
+              <div className="crop-ratios" role="group" aria-label="Ratio de recadrage">
+                {CROP_RATIOS.map((ratio) => (
+                  <button
+                    key={ratio.key}
+                    className={cropRatio === ratio.key ? 'is-active' : ''}
+                    onClick={() => changeCropRatio(ratio.key)}
+                    aria-pressed={cropRatio === ratio.key}
+                  >
+                    {ratio.label}
+                  </button>
+                ))}
+              </div>
               <div>
                 <button className="button button-mini button-ghost" onClick={cancelCrop}>
                   Annuler
@@ -823,6 +997,7 @@ export function ImageEditor({
                   <button
                     className="link-button"
                     onClick={() => {
+                      recordHistory()
                       setFilters({ ...DEFAULT_FILTERS })
                       setDirty(true)
                     }}
@@ -839,6 +1014,7 @@ export function ImageEditor({
                   min={50}
                   max={150}
                   value={filters.brightness}
+                  onPointerDown={recordHistory}
                   onChange={(event) => {
                     setFilters((current) => ({
                       ...current,
@@ -856,6 +1032,7 @@ export function ImageEditor({
                   min={50}
                   max={150}
                   value={filters.contrast}
+                  onPointerDown={recordHistory}
                   onChange={(event) => {
                     setFilters((current) => ({
                       ...current,
@@ -873,6 +1050,7 @@ export function ImageEditor({
                   min={0}
                   max={200}
                   value={filters.saturation}
+                  onPointerDown={recordHistory}
                   onChange={(event) => {
                     setFilters((current) => ({
                       ...current,
@@ -885,6 +1063,7 @@ export function ImageEditor({
               <button
                 className={`style-toggle ${filters.grayscale === 100 ? 'is-active' : ''}`}
                 onClick={() => {
+                  recordHistory()
                   setFilters((current) => ({
                     ...current,
                     grayscale: current.grayscale === 100 ? 0 : 100
@@ -905,6 +1084,7 @@ export function ImageEditor({
                   <button
                     className="icon-button icon-button-small"
                     onClick={() => {
+                      recordHistory()
                       setStrokes((current) => current.slice(0, -1))
                       setDirty(true)
                     }}
@@ -917,6 +1097,7 @@ export function ImageEditor({
                   <button
                     className="icon-button icon-button-small"
                     onClick={() => {
+                      recordHistory()
                       setStrokes([])
                       setDirty(true)
                     }}
@@ -971,6 +1152,66 @@ export function ImageEditor({
                   </button>
                 ))}
               </div>
+              <div className="export-size-row">
+                <label>
+                  <span>Largeur</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_EXPORT_DIMENSION}
+                    value={exportWidth || ''}
+                    onChange={(event) => {
+                      const value = Number(event.target.value)
+                      setExportWidth(value)
+                      if (lockAspect && base && value > 0) {
+                        setExportHeight(
+                          Math.max(1, Math.round(value * (base.height / base.width)))
+                        )
+                      }
+                    }}
+                  />
+                </label>
+                <span className="export-size-sep">×</span>
+                <label>
+                  <span>Hauteur</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_EXPORT_DIMENSION}
+                    value={exportHeight || ''}
+                    onChange={(event) => {
+                      const value = Number(event.target.value)
+                      setExportHeight(value)
+                      if (lockAspect && base && value > 0) {
+                        setExportWidth(
+                          Math.max(1, Math.round(value * (base.width / base.height)))
+                        )
+                      }
+                    }}
+                  />
+                </label>
+                <button
+                  className={`style-toggle export-lock ${lockAspect ? 'is-active' : ''}`}
+                  onClick={() => setLockAspect((current) => !current)}
+                  aria-pressed={lockAspect}
+                  title={lockAspect ? 'Ratio verrouillé' : 'Ratio libre'}
+                >
+                  {lockAspect ? 'Ratio lié' : 'Ratio libre'}
+                </button>
+              </div>
+              {exportFormat === 'jpg' ? (
+                <label className="slider-field compact">
+                  <span>Qualité JPEG</span>
+                  <strong>{jpegQuality}%</strong>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    value={jpegQuality}
+                    onChange={(event) => setJpegQuality(Number(event.target.value))}
+                  />
+                </label>
+              ) : null}
               {canReplace ? (
                 <p className="inspector-note">
                   « Enregistrer » conserve le format d’origine. Le format choisi s’applique aux

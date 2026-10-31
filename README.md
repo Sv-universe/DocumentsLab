@@ -43,6 +43,8 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 - Formats acceptés : **PDF**, PNG, JPG/JPEG, WebP, GIF, BMP et AVIF.
 - Vignettes réelles des PDF et des images, recherche instantanée, tri et filtres.
 - Favoris, renommage, suppression, affichage dans le dossier système.
+- Sélection multiple (Ctrl/Cmd ou Maj) avec favoris et suppression groupés.
+- Tri et vue grille/liste conservés entre deux lancements.
 - Vue grille ou vue liste, interface responsive.
 
 ### PDF — signature et édition légère
@@ -51,7 +53,10 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 - **Signature** dessinée au trackpad/souris/stylet ou importée depuis une image.
 - Placement, déplacement et redimensionnement de la signature sur la page.
 - Ajout de **texte** libre : contenu, taille, couleur et gras.
-- Réorganisation et suppression de pages, avec **annuler/rétablir**.
+- **Surlignage**, **encre libre** et **formes** (rectangle, flèche), avec couleur, opacité et épaisseur.
+- Annotation déplaçable et redimensionnable, intégrée à l’historique **annuler/rétablir**.
+- Réorganisation, duplication, suppression et extraction de pages, avec **annuler/rétablir**.
+- Insertion des pages d’un autre PDF après la page courante.
 - Enregistrement dans la bibliothèque ou export d’une copie.
 - Prise en charge des pages PDF déjà pivotées (`/Rotate`).
 
@@ -59,9 +64,11 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 
 - Zoom, déplacement et fond quadrillé pour les images transparentes.
 - Rotation, miroir horizontal/vertical.
-- Recadrage interactif avec repères.
+- Recadrage interactif avec repères et ratios (1:1, 4:3, 16:9).
 - Réglages de luminosité, contraste, saturation et noir & blanc.
 - **Marqueur** pour annoter une image, avec annulation du dernier trait.
+- Historique **annuler/rétablir** pour toutes les transformations et retouches.
+- Redimensionnement à l’export et qualité JPEG réglable.
 - Export en PNG, JPG ou WebP, ou enregistrement au format d’origine.
 - Les fichiers GIF/BMP/AVIF peuvent être ouverts et exportés dans un format moderne.
 
@@ -88,18 +95,18 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 
 ## Téléchargement
 
-> **Version alpha** — la 0.1.0 est une première version publique destinée aux essais.
+> **Version alpha** — la 0.2.0 approfondit les outils PDF et image existants.
 > Sauvegardez vos originaux et signalez les problèmes rencontrés.
 
-[**Télécharger DocumentsLab 0.1.0 alpha — AppImage Linux**](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/DocumentsLab-0.1.0-x86_64.AppImage)  
-[SHA256SUMS](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/SHA256SUMS.txt)
+[**Télécharger DocumentsLab 0.2.0 alpha — AppImage Linux**](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.2.0/DocumentsLab-0.2.0-x86_64.AppImage)  
+[SHA256SUMS](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.2.0/SHA256SUMS.txt)
 
 Toutes les versions sont disponibles dans les [releases GitHub](https://github.com/Sv-universe/DocumentsLab/releases).
 Le fichier Linux publié s’appelle `DocumentsLab-<version>-x86_64.AppImage`.
 
 ```bash
-chmod +x DocumentsLab-0.1.0-x86_64.AppImage
-./DocumentsLab-0.1.0-x86_64.AppImage
+chmod +x DocumentsLab-0.2.0-x86_64.AppImage
+./DocumentsLab-0.2.0-x86_64.AppImage
 ```
 
 Sur Linux, l’AppImage peut aussi être ajoutée au menu de vos applications avec
@@ -130,8 +137,8 @@ npm run dist
 L’AppImage produite se lance directement :
 
 ```bash
-chmod +x dist/DocumentsLab-0.1.0-x86_64.AppImage
-./dist/DocumentsLab-0.1.0-x86_64.AppImage
+chmod +x dist/DocumentsLab-0.2.0-x86_64.AppImage
+./dist/DocumentsLab-0.2.0-x86_64.AppImage
 ```
 
 ## Raccourcis
@@ -139,10 +146,10 @@ chmod +x dist/DocumentsLab-0.1.0-x86_64.AppImage
 | Raccourci | Action |
 | --- | --- |
 | `Ctrl/Cmd + S` | Enregistrer le document ouvert |
-| `Ctrl/Cmd + Z` | Annuler (PDF) |
-| `Ctrl/Cmd + Shift + Z` | Rétablir (PDF) |
+| `Ctrl/Cmd + Z` | Annuler (PDF et image) |
+| `Ctrl/Cmd + Shift + Z` | Rétablir (PDF et image) |
 | `Suppr` / `Backspace` | Supprimer l’annotation sélectionnée |
-| `Échap` | Quitter l’outil en cours |
+| `Échap` | Quitter l’outil en cours ou vider la sélection |
 | `←` / `→` | Page précédente / suivante (PDF) |
 
 ## Où sont mes fichiers ?
@@ -176,8 +183,13 @@ documents que via une API IPC exposée par le preload.
 
 ## Limites de cette première version
 
-- L’édition PDF est volontairement légère : signatures et textes sont aplatis dans le PDF
-  enregistré. Le texte ajouté reste vectoriel, la signature est une image.
+- L’édition PDF est volontairement légère : signatures, textes et annotations sont aplatis
+  dans le PDF enregistré. Le texte et les annotations restent vectoriels, la signature est
+  une image.
+- L’extraction de pages produit un fichier exporté ; elle ne crée pas de document dans la
+  bibliothèque.
+- L’insertion d’un PDF externe et l’extraction ne prennent pas en charge les PDF protégés
+  par mot de passe.
 - « Enregistrer » remplace le document de la bibliothèque. Utilisez « Exporter » pour
   conserver une copie séparée.
 - Les PDF protégés par mot de passe et les PDF très complexes peuvent ne pas s’afficher

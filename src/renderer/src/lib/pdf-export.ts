@@ -23,7 +23,7 @@ function hexToRgb(hex: string) {
   )
 }
 
-function normalizeRotation(angle: number): 0 | 90 | 180 | 270 {
+export function normalizeRotation(angle: number): 0 | 90 | 180 | 270 {
   const normalized = ((angle % 360) + 360) % 360
   if (normalized < 45 || normalized >= 315) return 0
   if (normalized < 135) return 90
@@ -31,7 +31,7 @@ function normalizeRotation(angle: number): 0 | 90 | 180 | 270 {
   return 270
 }
 
-function mapDisplayPoint(
+export function mapDisplayPoint(
   rotation: 0 | 90 | 180 | 270,
   pageWidth: number,
   pageHeight: number,
@@ -110,29 +110,164 @@ async function drawTextOverlay(
   }
 }
 
-export async function buildEditedPdf(
-  originalBytes: Uint8Array,
-  state: PdfEditState
-): Promise<Uint8Array> {
-  const source = await PDFDocument.load(originalBytes, { updateMetadata: false })
+function drawHighlight(
+  page: PDFPage,
+  overlay: Extract<PdfOverlay, { type: 'highlight' }>,
+  rotation: 0 | 90 | 180 | 270,
+  pageWidth: number,
+  pageHeight: number
+) {
+  const rect = mapSignatureRect(
+    rotation,
+    pageWidth,
+    pageHeight,
+    overlay.x,
+    overlay.y,
+    overlay.width,
+    overlay.height
+  )
+  page.drawRectangle({
+    ...rect,
+    color: hexToRgb(overlay.color),
+    opacity: overlay.opacity
+  })
+}
+
+function drawInk(
+  page: PDFPage,
+  overlay: Extract<PdfOverlay, { type: 'ink' }>,
+  rotation: 0 | 90 | 180 | 270,
+  pageWidth: number,
+  pageHeight: number
+) {
+  const color = hexToRgb(overlay.color)
+  for (let index = 1; index < overlay.points.length; index += 1) {
+    const previous = overlay.points[index - 1]
+    const current = overlay.points[index]
+    if (!previous || !current) continue
+    const start = mapDisplayPoint(
+      rotation,
+      pageWidth,
+      pageHeight,
+      overlay.x + previous.x * overlay.width,
+      overlay.y + previous.y * overlay.height
+    )
+    const end = mapDisplayPoint(
+      rotation,
+      pageWidth,
+      pageHeight,
+      overlay.x + current.x * overlay.width,
+      overlay.y + current.y * overlay.height
+    )
+    page.drawLine({
+      start,
+      end,
+      thickness: overlay.strokeWidth,
+      color,
+      opacity: overlay.opacity
+    })
+  }
+}
+
+function drawShape(
+  page: PDFPage,
+  overlay: Extract<PdfOverlay, { type: 'shape' }>,
+  rotation: 0 | 90 | 180 | 270,
+  pageWidth: number,
+  pageHeight: number
+) {
+  const color = hexToRgb(overlay.color)
+  if (overlay.kind === 'rect') {
+    const rect = mapSignatureRect(
+      rotation,
+      pageWidth,
+      pageHeight,
+      overlay.x,
+      overlay.y,
+      overlay.width,
+      overlay.height
+    )
+    page.drawRectangle({
+      ...rect,
+      borderColor: color,
+      borderWidth: overlay.strokeWidth,
+      borderOpacity: overlay.opacity
+    })
+    return
+  }
+
+  const startX = overlay.flipX ? overlay.x + overlay.width : overlay.x
+  const startY = overlay.flipY ? overlay.y + overlay.height : overlay.y
+  const endX = overlay.flipX ? overlay.x : overlay.x + overlay.width
+  const endY = overlay.flipY ? overlay.y : overlay.y + overlay.height
+  const start = mapDisplayPoint(rotation, pageWidth, pageHeight, startX, startY)
+  const end = mapDisplayPoint(rotation, pageWidth, pageHeight, endX, endY)
+  page.drawLine({
+    start,
+    end,
+    thickness: overlay.strokeWidth,
+    color,
+    opacity: overlay.opacity
+  })
+
+  const angle = Math.atan2(endY - startY, endX - startX)
+  const length = Math.max(6, Math.min(18, Math.hypot(endX - startX, endY - startY) * 0.22))
+  for (const offset of [Math.PI / 7, -Math.PI / 7]) {
+    const headPoint = mapDisplayPoint(
+      rotation,
+      pageWidth,
+      pageHeight,
+      endX - Math.cos(angle + offset) * length,
+      endY - Math.sin(angle + offset) * length
+    )
+    page.drawLine({
+      start: end,
+      end: headPoint,
+      thickness: overlay.strokeWidth,
+      color,
+      opacity: overlay.opacity
+    })
+  }
+}
+
+export async function buildEditedPdf(state: PdfEditState): Promise<Uint8Array> {
+  const sources = new Map<string, PDFDocument>()
+  await Promise.all(
+    Object.entries(state.sources).map(async ([id, source]) => {
+      sources.set(id, await PDFDocument.load(source.bytes, { updateMetadata: false }))
+    })
+  )
+
   const output = await PDFDocument.create()
   const regularFont = await output.embedFont(StandardFonts.Helvetica)
   const boldFont = await output.embedFont(StandardFonts.HelveticaBold)
-  const pages = await output.copyPages(source, state.pageOrder)
 
-  for (let index = 0; index < pages.length; index += 1) {
-    const page = pages[index]
+  for (const pageRef of state.pages) {
+    const source = sources.get(pageRef.sourceId)
+    if (!source) throw new Error('Une page source est introuvable.')
+    const [page] = await output.copyPages(source, [pageRef.index])
+    if (!page) continue
     output.addPage(page)
-    const originalIndex = state.pageOrder[index]
-    const sourcePage = source.getPage(originalIndex)
-    const rotation = normalizeRotation(sourcePage.getRotation().angle)
+    const rotation = normalizeRotation(page.getRotation().angle)
     const pageWidth = page.getWidth()
     const pageHeight = page.getHeight()
-    const overlays = state.overlays[originalIndex] ?? []
+    const overlays = state.overlays[pageRef.id] ?? []
 
     for (const overlay of overlays) {
       if (overlay.type === 'text') {
         await drawTextOverlay(page, overlay, rotation, pageWidth, pageHeight, regularFont, boldFont)
+        continue
+      }
+      if (overlay.type === 'highlight') {
+        drawHighlight(page, overlay, rotation, pageWidth, pageHeight)
+        continue
+      }
+      if (overlay.type === 'ink') {
+        drawInk(page, overlay, rotation, pageWidth, pageHeight)
+        continue
+      }
+      if (overlay.type === 'shape') {
+        drawShape(page, overlay, rotation, pageWidth, pageHeight)
         continue
       }
 

@@ -1,6 +1,6 @@
 {
   "name": "documentslab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DocumentsLab — un atelier documentaire local pour vos PDF et vos images.",
   "main": "./out/main/index.js",
   "author": "Sv Universe",
@@ -10,6 +10,7 @@
     "start": "electron-vite preview",
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
     "dist": "npm run build && electron-builder --linux AppImage",
     "dist:dir": "npm run build && electron-builder --dir"
   },
@@ -32,7 +33,8 @@
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.7"
+    "vite": "^7.3.7",
+    "vitest": "^5.0.5"
   },
   "build": {
     "appId": "com.documentslab.app",

@@ -14,6 +14,7 @@ import { renderPdfThumbnail } from './lib/pdf'
 import type { LibraryFilter, SortMode, ViewMode } from './lib/library'
 import type { EditorSource, Notify } from './lib/editor'
 import { updateDocumentInList } from './lib/library-state'
+import { loadLibraryPreferences, saveLibraryPreferences } from './lib/preferences'
 
 interface OpeningState {
   id?: string
@@ -37,15 +38,16 @@ export default function App() {
   const [opening, setOpening] = useState<OpeningState | null>(null)
   const [filter, setFilter] = useState<LibraryFilter>('all')
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SortMode>('modified')
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [sort, setSort] = useState<SortMode>(() => loadLibraryPreferences().sort)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadLibraryPreferences().viewMode)
   const [editor, setEditor] = useState<EditorSource | null>(null)
   const [editorKey, setEditorKey] = useState(0)
   const [renameTarget, setRenameTarget] = useState<DocumentMeta | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null)
+  const [bulkDeleteTargets, setBulkDeleteTargets] = useState<DocumentMeta[] | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [dragActive, setDragActive] = useState(false)
-  const [version, setVersion] = useState('0.1.0')
+  const [version, setVersion] = useState('0.2.0')
   const [creditsOpen, setCreditsOpen] = useState(false)
 
   const dragDepth = useRef(0)
@@ -72,6 +74,10 @@ export default function App() {
     },
     [dismissToast]
   )
+
+  useEffect(() => {
+    saveLibraryPreferences({ sort, viewMode })
+  }, [sort, viewMode])
 
   useEffect(() => {
     return () => {
@@ -232,6 +238,73 @@ export default function App() {
     },
     [notify]
   )
+
+  const setFavoriteMany = useCallback(
+    async (ids: string[], favorite: boolean) => {
+      if (ids.length === 0) return
+      const results = await Promise.allSettled(
+        ids.map((id) => window.doclab.updateDocument(id, { favorite }))
+      )
+      const updated = results.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : []
+      )
+      if (updated.length > 0) {
+        setDocuments((current) =>
+          updated.reduce(
+            (list, document) => updateDocumentInList(list, document),
+            current
+          )
+        )
+      }
+      const failed = results.length - updated.length
+      if (failed > 0) {
+        notify(
+          `${failed} document${failed > 1 ? 's' : ''} n’a pas pu être mis à jour.`,
+          'error'
+        )
+      } else {
+        notify(
+          favorite
+            ? `${updated.length} document${updated.length > 1 ? 's' : ''} ajouté${updated.length > 1 ? 's' : ''} aux favoris.`
+            : `${updated.length} document${updated.length > 1 ? 's' : ''} retiré${updated.length > 1 ? 's' : ''} des favoris.`,
+          'success'
+        )
+      }
+    },
+    [notify]
+  )
+
+  const requestDeleteMany = useCallback((targets: DocumentMeta[]) => {
+    if (targets.length > 0) setBulkDeleteTargets(targets)
+  }, [])
+
+  const confirmDeleteMany = useCallback(async () => {
+    if (!bulkDeleteTargets) return
+    const targets = bulkDeleteTargets
+    const results = await Promise.allSettled(
+      targets.map((document) => window.doclab.deleteDocument(document.id))
+    )
+    const removed = new Set(
+      targets
+        .filter((_, index) => results[index]?.status === 'fulfilled')
+        .map((document) => document.id)
+    )
+    setDocuments((current) => current.filter((document) => !removed.has(document.id)))
+    setBulkDeleteTargets(null)
+    const failed = targets.length - removed.size
+    if (removed.size > 0) {
+      notify(
+        `${removed.size} document${removed.size > 1 ? 's' : ''} supprimé${removed.size > 1 ? 's' : ''}.`,
+        'success'
+      )
+    }
+    if (failed > 0) {
+      notify(
+        `${failed} document${failed > 1 ? 's' : ''} n’a pas pu être supprimé.`,
+        'error'
+      )
+    }
+  }, [bulkDeleteTargets, notify])
 
   const saveRename = useCallback(
     async (name: string) => {
@@ -407,6 +480,8 @@ export default function App() {
                 onReset={resetFilters}
                 onOpenDocument={(document) => void openLibraryDocument(document)}
                 onToggleFavorite={(document) => void toggleFavorite(document)}
+                onSetFavoriteMany={(ids, favorite) => void setFavoriteMany(ids, favorite)}
+                onDeleteMany={requestDeleteMany}
                 onRename={setRenameTarget}
                 onDelete={setDeleteTarget}
                 onReveal={(document) => void revealDocument(document)}
@@ -460,6 +535,23 @@ export default function App() {
           <p>
             <strong>{deleteTarget.name}</strong> sera retiré de votre bibliothèque et le fichier
             local sera supprimé.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+
+      {bulkDeleteTargets ? (
+        <ConfirmDialog
+          title={`Supprimer ${bulkDeleteTargets.length} document${bulkDeleteTargets.length > 1 ? 's' : ''} ?`}
+          subtitle="Cette action est définitive."
+          confirmLabel="Supprimer"
+          onCancel={() => setBulkDeleteTargets(null)}
+          onConfirm={() => void confirmDeleteMany()}
+        >
+          <p>
+            <strong>
+              {bulkDeleteTargets.length} document{bulkDeleteTargets.length > 1 ? 's' : ''}
+            </strong>{' '}
+            seront retirés de votre bibliothèque et leurs fichiers locaux seront supprimés.
           </p>
         </ConfirmDialog>
       ) : null}

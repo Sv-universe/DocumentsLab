@@ -19,6 +19,88 @@ export interface CropRect {
   height: number
 }
 
+export type CropHandle = 'move' | 'nw' | 'ne' | 'sw' | 'se'
+
+export const MIN_CROP_SIZE = 0.04
+
+export function normalizedCropAspect(
+  ratio: number,
+  imageWidth: number,
+  imageHeight: number
+): number {
+  if (imageWidth <= 0 || imageHeight <= 0) return ratio
+  return ratio * (imageHeight / imageWidth)
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value))
+}
+
+export function fitCropToAspect(crop: CropRect, aspect: number): CropRect {
+  if (!Number.isFinite(aspect) || aspect <= 0) return crop
+  const centerX = crop.x + crop.width / 2
+  const centerY = crop.y + crop.height / 2
+  let width = crop.width
+  let height = crop.height
+  if (width / height > aspect) width = height * aspect
+  else height = width / aspect
+
+  const maxWidth = Math.min(1, 2 * Math.min(centerX, 1 - centerX))
+  const maxHeight = Math.min(1, 2 * Math.min(centerY, 1 - centerY))
+  if (width > maxWidth) {
+    width = maxWidth
+    height = width / aspect
+  }
+  if (height > maxHeight) {
+    height = maxHeight
+    width = height * aspect
+  }
+
+  width = Math.max(MIN_CROP_SIZE, width)
+  height = Math.max(MIN_CROP_SIZE, height)
+  return {
+    x: clamp01(centerX - width / 2),
+    y: clamp01(centerY - height / 2),
+    width,
+    height
+  }
+}
+
+export function constrainCropToAspect(
+  crop: CropRect,
+  aspect: number,
+  handle: CropHandle
+): CropRect {
+  if (handle === 'move' || !Number.isFinite(aspect) || aspect <= 0) return crop
+
+  const anchorX = handle.includes('w') ? crop.x + crop.width : crop.x
+  const anchorY = handle.includes('n') ? crop.y + crop.height : crop.y
+  let width = crop.width
+  let height = crop.height
+  if (width / height > aspect) width = height * aspect
+  else height = width / aspect
+
+  const maxWidth = handle.includes('w') ? anchorX : 1 - anchorX
+  const maxHeight = handle.includes('n') ? anchorY : 1 - anchorY
+  if (width > maxWidth) {
+    width = maxWidth
+    height = width / aspect
+  }
+  if (height > maxHeight) {
+    height = maxHeight
+    width = height * aspect
+  }
+
+  width = Math.max(MIN_CROP_SIZE, width)
+  height = Math.max(MIN_CROP_SIZE, height)
+  return {
+    x: handle.includes('w') ? clamp01(anchorX - width) : clamp01(anchorX),
+    y: handle.includes('n') ? clamp01(anchorY - height) : clamp01(anchorY),
+    width,
+    height
+  }
+}
+
 export interface BaseImage {
   source: CanvasImageSource
   width: number
@@ -84,13 +166,18 @@ export function buildCompositeCanvas(
   base: BaseImage,
   strokes: PenStroke[],
   filters: ImageFilters,
-  options: { whiteBackground?: boolean; maxWidth?: number } = {}
+  options: {
+    whiteBackground?: boolean
+    maxWidth?: number
+    targetWidth?: number
+    targetHeight?: number
+  } = {}
 ): HTMLCanvasElement {
-  const width = options.maxWidth
-    ? Math.min(base.width, options.maxWidth)
-    : base.width
+  const width =
+    options.targetWidth ??
+    (options.maxWidth ? Math.min(base.width, options.maxWidth) : base.width)
   const scale = width / base.width
-  const height = base.height * scale
+  const height = options.targetHeight ?? base.height * scale
   const canvas = makeCanvas(width, height)
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas indisponible.')

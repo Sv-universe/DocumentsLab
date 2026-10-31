@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { ChevronDown, LayoutGrid, List, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, LayoutGrid, List, Search, Star, StarOff, Trash2, X } from 'lucide-react'
 import type { DocumentMeta } from '@shared/types'
 import { formatBytes, pluralize } from '../lib/format'
 import {
@@ -10,7 +10,8 @@ import {
   type SortMode,
   type ViewMode
 } from '../lib/library'
-import { DocumentCard } from './DocumentCard'
+import { pruneSelection, selectRange, toggleSelection } from '../lib/selection'
+import { DocumentCard, type SelectionModifiers } from './DocumentCard'
 import { EmptyState } from './EmptyState'
 
 interface LibraryViewProps {
@@ -29,6 +30,8 @@ interface LibraryViewProps {
   onReset: () => void
   onOpenDocument: (document: DocumentMeta) => void
   onToggleFavorite: (document: DocumentMeta) => void
+  onSetFavoriteMany: (ids: string[], favorite: boolean) => void
+  onDeleteMany: (documents: DocumentMeta[]) => void
   onRename: (document: DocumentMeta) => void
   onDelete: (document: DocumentMeta) => void
   onReveal: (document: DocumentMeta) => void
@@ -50,14 +53,72 @@ export function LibraryView({
   onReset,
   onOpenDocument,
   onToggleFavorite,
+  onSetFavoriteMany,
+  onDeleteMany,
   onRename,
   onDelete,
   onReveal
 }: LibraryViewProps) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const anchorRef = useRef<string | null>(null)
+
   const filtered = useMemo(
     () => filterAndSortDocuments(documents, filter, query, sort),
     [documents, filter, query, sort]
   )
+  const visibleIds = useMemo(() => filtered.map((document) => document.id), [filtered])
+
+  useEffect(() => {
+    setSelected(new Set())
+    anchorRef.current = null
+  }, [filter, query])
+
+  useEffect(() => {
+    setSelected((current) => {
+      const next = pruneSelection(current, visibleIds)
+      return next.size === current.size ? current : next
+    })
+  }, [visibleIds])
+
+  useEffect(() => {
+    if (selected.size === 0) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelected(new Set())
+        anchorRef.current = null
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selected.size])
+
+  const handleSelect = (document: DocumentMeta, modifiers: SelectionModifiers) => {
+    if (modifiers.shiftKey) {
+      setSelected(selectRange(visibleIds, anchorRef.current, document.id))
+      anchorRef.current = anchorRef.current ?? document.id
+      return
+    }
+    if (modifiers.ctrlKey || modifiers.metaKey) {
+      setSelected((current) => toggleSelection(current, document.id))
+      anchorRef.current = document.id
+      return
+    }
+    setSelected(new Set())
+    anchorRef.current = null
+    onOpenDocument(document)
+  }
+
+  const selectedDocuments = useMemo(
+    () => filtered.filter((document) => selected.has(document.id)),
+    [filtered, selected]
+  )
+  const allFavorites =
+    selectedDocuments.length > 0 && selectedDocuments.every((document) => document.favorite)
+
+  const clearSelection = () => {
+    setSelected(new Set())
+    anchorRef.current = null
+  }
 
   const filteredSize = totalSize(filtered)
   const title = FILTER_LABELS[filter]
@@ -125,6 +186,46 @@ export function LibraryView({
         </div>
       </header>
 
+      {selected.size > 0 ? (
+        <div className="selection-bar" role="status">
+          <div className="selection-bar-info">
+            <span className="selection-count">{selected.size}</span>
+            <span>
+              {selected.size === 1 ? 'document sélectionné' : 'documents sélectionnés'}
+            </span>
+          </div>
+          <div className="selection-bar-actions">
+            <button
+              className="button button-ghost button-small"
+              onClick={() =>
+                onSetFavoriteMany(
+                  selectedDocuments.map((document) => document.id),
+                  !allFavorites
+                )
+              }
+            >
+              {allFavorites ? <StarOff size={15} /> : <Star size={15} />}
+              {allFavorites ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            </button>
+            <button
+              className="button button-danger-ghost button-small"
+              onClick={() => onDeleteMany(selectedDocuments)}
+            >
+              <Trash2 size={15} />
+              Supprimer
+            </button>
+            <button
+              className="icon-button icon-button-small"
+              onClick={clearSelection}
+              aria-label="Désélectionner"
+              title="Désélectionner (Échap)"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="doc-grid">
           {Array.from({ length: 6 }).map((_, index) => (
@@ -152,7 +253,8 @@ export function LibraryView({
               document={document}
               index={index}
               viewMode={viewMode}
-              onOpen={onOpenDocument}
+              selected={selected.has(document.id)}
+              onSelect={handleSelect}
               onToggleFavorite={onToggleFavorite}
               onRename={onRename}
               onDelete={onDelete}

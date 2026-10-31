@@ -12,11 +12,18 @@ import type { DocumentMeta } from '@shared/types'
 import { formatBytes, formatRelativeDate } from '../lib/format'
 import type { ViewMode } from '../lib/library'
 
+export interface SelectionModifiers {
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+}
+
 interface DocumentCardProps {
   document: DocumentMeta
   index: number
   viewMode: ViewMode
-  onOpen: (document: DocumentMeta) => void
+  selected: boolean
+  onSelect: (document: DocumentMeta, modifiers: SelectionModifiers) => void
   onToggleFavorite: (document: DocumentMeta) => void
   onRename: (document: DocumentMeta) => void
   onDelete: (document: DocumentMeta) => void
@@ -59,7 +66,8 @@ export function DocumentCard({
   document,
   index,
   viewMode,
-  onOpen,
+  selected,
+  onSelect,
   onToggleFavorite,
   onRename,
   onDelete,
@@ -86,7 +94,11 @@ export function DocumentCard({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      onOpen(document)
+      onSelect(document, {
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey
+      })
     }
   }
 
@@ -97,12 +109,15 @@ export function DocumentCard({
 
   return (
     <article
-      className={`doc-card doc-card-${viewMode} ${menuOpen ? 'menu-open' : ''}`}
+      className={`doc-card doc-card-${viewMode} ${menuOpen ? 'menu-open' : ''} ${
+        selected ? 'is-selected' : ''
+      }`}
       style={{ '--card-delay': `${Math.min(index, 14) * 24}ms` } as CSSProperties}
       role="button"
       tabIndex={0}
-      aria-label={`Ouvrir ${document.name}`}
-      onClick={() => onOpen(document)}
+      aria-label={`${selected ? 'Sélectionné : ' : 'Ouvrir '}${document.name}`}
+      aria-pressed={selected}
+      onClick={(event) => onSelect(document, event)}
       onKeyDown={onKeyDown}
     >
       <div className="doc-thumb">
