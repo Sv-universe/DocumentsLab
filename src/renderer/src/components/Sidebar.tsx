@@ -88,7 +88,10 @@ export function Sidebar({
           onClick={onShowCredits}
           title="Crédits et à propos"
         >
-          <span className="app-version">DocumentsLab {version}</span>
+          <span className="app-version">
+            DocumentsLab {version}
+            <span className="alpha-badge">Alpha</span>
+          </span>
           <span className="credits-trigger-line">
             par <span className="credits-trigger-name">Sv Universe</span>
           </span>

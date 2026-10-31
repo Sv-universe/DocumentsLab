@@ -26,7 +26,10 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
           <Logo size={58} />
           <div>
             <h3>DocumentsLab</h3>
-            <span className="credits-version">Version {version}</span>
+            <span className="credits-meta">
+              <span className="credits-version">Version {version}</span>
+              <span className="alpha-badge">Alpha</span>
+            </span>
           </div>
         </div>
 

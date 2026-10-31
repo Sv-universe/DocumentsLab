@@ -7,12 +7,18 @@
 
   <p>
     <a href="https://github.com/Sv-universe/DocumentsLab/actions/workflows/ci.yml"><img src="https://github.com/Sv-universe/DocumentsLab/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/Sv-universe/DocumentsLab/releases"><img src="https://img.shields.io/badge/statut-alpha-F04438" alt="Statut : alpha" /></a>
     <a href="https://github.com/Sv-universe/DocumentsLab/releases"><img src="https://img.shields.io/github/v/release/Sv-universe/DocumentsLab?label=release" alt="Release" /></a>
   </p>
 
   <p>
     Bibliothèque, signature, édition légère de PDF et retouche d’images —<br />
     le tout dans une application de bureau calme, rapide et privée.
+  </p>
+
+  <p>
+    <sub><strong>Version alpha</strong> — DocumentsLab est encore en développement :
+    certaines fonctionnalités peuvent évoluer ou présenter des imperfections.</sub>
   </p>
 </div>
 
@@ -82,7 +88,10 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 
 ## Téléchargement
 
-[**Télécharger DocumentsLab 0.1.0 — AppImage Linux**](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/DocumentsLab-0.1.0-x86_64.AppImage)  
+> **Version alpha** — la 0.1.0 est une première version publique destinée aux essais.
+> Sauvegardez vos originaux et signalez les problèmes rencontrés.
+
+[**Télécharger DocumentsLab 0.1.0 alpha — AppImage Linux**](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/DocumentsLab-0.1.0-x86_64.AppImage)  
 [SHA256SUMS](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/SHA256SUMS.txt)
 
 Toutes les versions sont disponibles dans les [releases GitHub](https://github.com/Sv-universe/DocumentsLab/releases).
