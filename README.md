@@ -82,9 +82,19 @@ importés sont copiés dans la bibliothèque de l’application sur votre ordina
 
 ## Téléchargement
 
-Les versions publiées sont disponibles dans les [releases GitHub](https://github.com/Sv-universe/DocumentsLab/releases).
+[**Télécharger DocumentsLab 0.1.0 — AppImage Linux**](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/DocumentsLab-0.1.0-x86_64.AppImage)  
+[SHA256SUMS](https://github.com/Sv-universe/DocumentsLab/releases/download/v0.1.0/SHA256SUMS.txt)
 
+Toutes les versions sont disponibles dans les [releases GitHub](https://github.com/Sv-universe/DocumentsLab/releases).
 Le fichier Linux publié s’appelle `DocumentsLab-<version>-x86_64.AppImage`.
+
+```bash
+chmod +x DocumentsLab-0.1.0-x86_64.AppImage
+./DocumentsLab-0.1.0-x86_64.AppImage
+```
+
+Sur Linux, l’AppImage peut aussi être ajoutée au menu de vos applications avec
+**Gear Lever**.
 
 ## Démarrage
 
