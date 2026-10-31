@@ -1,0 +1,75 @@
+{
+  "name": "documentslab",
+  "version": "0.1.0",
+  "description": "DocumentsLab — un atelier documentaire local pour vos PDF et vos images.",
+  "main": "./out/main/index.js",
+  "author": "Sv Universe",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist": "npm run build && electron-builder --linux AppImage",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource/great-vibes": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "lucide-react": "^0.468.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  },
+  "build": {
+    "appId": "com.documentslab.app",
+    "productName": "DocumentsLab",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "synopsis": "Atelier documentaire local pour PDF et images",
+      "description": "DocumentsLab réunit votre bibliothèque de documents, la signature et l'édition légère de PDF, ainsi que la retouche d'images, dans une application locale et privée.",
+      "syncDesktopName": true
+    },
+    "artifactName": "DocumentsLab-${version}-${arch}.${ext}"
+  },
+  "desktopName": "documentslab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sv-universe/DocumentsLab.git"
+  },
+  "homepage": "https://github.com/Sv-universe/DocumentsLab#readme",
+  "bugs": {
+    "url": "https://github.com/Sv-universe/DocumentsLab/issues"
+  }
+}
