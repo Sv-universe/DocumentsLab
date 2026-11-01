@@ -33,7 +33,18 @@ Runtime data is in Electron `userData`: `library.json` (metadata), `library/` (c
 
 ## OpenSpec workflow
 
-`openspec/` is tracked and is the behavioral source of truth: `openspec/specs/` holds capability specs; `openspec/changes/` holds proposals/designs/tasks and archived changes. Use the local `.opencode/commands/opsx-*.md` commands (`/opsx-propose`, `/opsx-apply`, `/opsx-archive`, etc.) for spec-driven changes. Those commands are untracked, so a fresh clone may lack them; use the `openspec` CLI directly if needed. OpenSpec artifacts and user-facing UI text are French.
+OpenSpec is mandatory for any behavioral change: always use OpenSpec and its commands instead of changing behavior ad hoc. `openspec/` is tracked and is the behavioral source of truth: `openspec/specs/` holds capability specs; `openspec/changes/` holds proposals/designs/tasks and archived changes. Never edit `openspec/specs/` directly; changes must go through a change in `openspec/changes/`, then be synced or archived with the CLI.
+
+Always use the local `.opencode/commands/opsx-*.md` commands for spec-driven work:
+
+- `/opsx-explore` — think through an idea or problem before proposing a change.
+- `/opsx-propose` — create a change and generate all artifacts (proposal, delta specs, design, tasks).
+- `/opsx-update` — revise an existing change's artifacts and keep them coherent.
+- `/opsx-apply` — implement the tasks of an approved change.
+- `/opsx-sync` — sync delta specs to main specs without archiving.
+- `/opsx-archive` — archive a completed change.
+
+Those commands are untracked, so a fresh clone may lack them; use the `openspec` CLI directly (`openspec new change`, `openspec status`, `openspec validate`, `openspec archive`, etc.) if needed. OpenSpec artifacts and user-facing UI text are French.
 
 ## Release
 
